@@ -1,4 +1,6 @@
 # Tracks
+import numpy as np
+
 BBOX = "bbox"
 FRAME = "frame"
 TRACK_ID = "trackId"
@@ -62,7 +64,55 @@ class State(object):
         self.height = height
         self.heading = heading
         self.vehicle_type = vehicle_type
-        self.center = self.calc_center()
 
-    def calc_center(self):
-        return self.x[0] + (self.width / 2), self.y[0] + (self.height / 2)
+
+
+def get_rotated_bbox(x_center: np.ndarray, y_center: np.ndarray,
+                     length: np.ndarray, width: np.ndarray, heading: np.ndarray) -> np.ndarray:
+    """
+    Calculate the corners of a rotated bbox from the position, shape and heading for every timestamp.
+
+    :param x_center: x coordinates of the object center positions [num_timesteps]
+    :param y_center: y coordinates of the object center positions [num_timesteps]
+    :param length: objects lengths [num_timesteps]
+    :param width: object widths [num_timesteps]
+    :param heading: object heading (rad) [num_timesteps]
+    :return: Numpy array in the shape [num_timesteps, 4 (corners), 2 (dimensions)]
+    """
+    centroids = np.column_stack([x_center, y_center])
+
+    # Precalculate all components needed for the corner calculation
+    l = length / 2
+    w = width / 2
+    c = np.cos(heading)
+    s = np.sin(heading)
+
+    lc = l * c
+    ls = l * s
+    wc = w * c
+    ws = w * s
+
+    # Calculate all four rotated bbox corner positions assuming the object is located at the origin.
+    # To do so, rotate the corners at [+/- length/2, +/- width/2] as given by the orientation.
+    # Use a vectorized approach using precalculated components for maximum efficiency
+    rotated_bbox_vertices = np.empty((centroids.shape[0], 4, 2))
+
+    # Front-right corner
+    rotated_bbox_vertices[:, 0, 0] = lc - ws
+    rotated_bbox_vertices[:, 0, 1] = ls + wc
+
+    # Rear-right corner
+    rotated_bbox_vertices[:, 1, 0] = -lc - ws
+    rotated_bbox_vertices[:, 1, 1] = -ls + wc
+
+    # Rear-left corner
+    rotated_bbox_vertices[:, 2, 0] = -lc + ws
+    rotated_bbox_vertices[:, 2, 1] = -ls - wc
+
+    # Front-left corner
+    rotated_bbox_vertices[:, 3, 0] = lc + ws
+    rotated_bbox_vertices[:, 3, 1] = ls - wc
+
+    # Move corners of rotated bounding box from the origin to the object's location
+    rotated_bbox_vertices = rotated_bbox_vertices + np.expand_dims(centroids, axis=1)
+    return rotated_bbox_vertices
