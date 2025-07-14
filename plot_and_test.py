@@ -52,7 +52,13 @@ def draw_scene(scenario: ScenarioInD, frame_id: int):
         w = scale(state.width)
         h = scale(state.height)
 
-        rotated_bbox_vertices = get_rotated_bbox(x, y, w, h, state.heading)[0]
+        # Convert heading from degrees to radians and adapt to the image
+        heading_vis = -state.heading
+        if heading_vis < 0:
+            heading_vis += 360
+        heading_rad = np.deg2rad(heading_vis)
+
+        rotated_bbox_vertices = get_rotated_bbox(x, y, w, h, heading_rad)[0]
 
         polygon = patches.Polygon(
             rotated_bbox_vertices,
@@ -81,4 +87,4 @@ if __name__ == "__main__":
 
     data_reader = DataReaderInD(prefix_number, data_path)
     scenario = ScenarioInD(data_reader)
-    draw_scene(scenario, frame_id=120)
+    draw_scene(scenario, frame_id=150)
