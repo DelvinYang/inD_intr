@@ -1,4 +1,5 @@
 import os
+import time
 
 import cv2
 import matplotlib.pyplot as plt
@@ -9,7 +10,7 @@ from read_data_inD import DataReaderInD
 from scenarioind import ScenarioInD
 
 
-def draw_scene(scenario: ScenarioInD, frame_id: int):
+def draw_scene(scenario: ScenarioInD, frame_id: int, fig=None, ax=None):
     """Visualize all objects of ``frame_id`` on the orthophoto.
 
         Parameters
@@ -21,6 +22,11 @@ def draw_scene(scenario: ScenarioInD, frame_id: int):
         """
 
     data_reader = scenario.data_reader
+
+    if fig is None or ax is None:
+        fig, ax = plt.subplots(figsize=(10, 10))
+
+    ax.clear()
 
     if not os.path.exists(data_reader.background_path):
         raise FileNotFoundError(f"Background image not found: {data_reader.background_path}")
@@ -77,14 +83,22 @@ def draw_scene(scenario: ScenarioInD, frame_id: int):
 
     ax.set_title(f"Frame {frame_id}")
     plt.tight_layout()
-    plt.show()
+    fig.canvas.draw()
 
 
-# ========== 使用示例 ==========
 if __name__ == "__main__":
     prefix_number = "00"
     data_path = "/Users/delvin/Desktop/programs/跨文化返修/inD"
 
     data_reader = DataReaderInD(prefix_number, data_path)
     scenario = ScenarioInD(data_reader)
-    draw_scene(scenario, frame_id=150)
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    plt.ion()  # 开启交互模式
+
+    all_frames = [v.track[FRAME] for v in scenario.vehicles.values()]
+    min_frame = min(f[0] for f in all_frames)
+    max_frame = max(f[-1] for f in all_frames)
+
+    for frame_id in range(min_frame, max_frame + 1):
+        draw_scene(scenario, frame_id, fig, ax)
