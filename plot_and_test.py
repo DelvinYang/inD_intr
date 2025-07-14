@@ -156,13 +156,3 @@ if __name__ == "__main__":
     data_reader = DataReaderInD(prefix_number, data_path)
     scenario = ScenarioInD(data_reader)
     play_scene(scenario)
-
-    fig, ax = plt.subplots(figsize=(10, 10))
-    plt.ion()  # 开启交互模式
-
-    all_frames = [v.track[FRAME] for v in scenario.vehicles.values()]
-    min_frame = min(f[0] for f in all_frames)
-    max_frame = max(f[-1] for f in all_frames)
-
-    for frame_id in range(min_frame, max_frame + 1):
-        draw_scene(scenario, frame_id, fig, ax)
