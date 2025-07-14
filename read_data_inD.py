@@ -63,7 +63,7 @@ class DataReaderInD(object):
                           # for compatibility, int would be more space efficient
                           FRAME: rows[FRAME].values,
                           BBOX: bounding_boxes,
-                          HEADING: -rows[HEADING].values,
+                          HEADING: rows[HEADING].values,
                           X_VELOCITY: rows[X_VELOCITY].values,
                           Y_VELOCITY: -rows[Y_VELOCITY].values,
                           X_ACCELERATION: rows[X_ACCELERATION].values,

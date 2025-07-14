@@ -52,7 +52,7 @@ def draw_scene(scenario: ScenarioInD, frame_id: int):
         w = scale(state.width)
         h = scale(state.height)
 
-        rotated_bbox_vertices = get_rotated_bbox(x, y, w, h, -state.heading)[0]
+        rotated_bbox_vertices = get_rotated_bbox(x, y, w, h, state.heading)[0]
 
         polygon = patches.Polygon(
             rotated_bbox_vertices,
