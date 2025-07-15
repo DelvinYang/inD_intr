@@ -75,6 +75,15 @@ def draw_scene(scenario: ScenarioInD, frame_id: int, fig=None, ax=None):
         )
         ax.add_patch(polygon)
 
+        # Draw vehicle ID at center
+        ax.text(x, y, str(veh_id), color='blue', fontsize=6, ha='center', va='center')
+
+        # Draw heading arrow
+        arrow_length = w  # adjust arrow length as needed
+        dx = arrow_length * np.cos(heading_rad)
+        dy = arrow_length * np.sin(heading_rad)
+        ax.arrow(x, y, dx, dy, head_width=1.5, head_length=1.5, fc='green', ec='green', linewidth=1)
+
     if area_cfg:
         x_lim = [val / SCALE_DOWN_FACTOR for val in area_cfg['x_lim']]
         y_lim = [val / SCALE_DOWN_FACTOR for val in area_cfg['y_lim']]
@@ -86,7 +95,7 @@ def draw_scene(scenario: ScenarioInD, frame_id: int, fig=None, ax=None):
     fig.canvas.draw()
 
 
-def play_scene(scenario: ScenarioInD, interval: int = 200):
+def play_scene(scenario: ScenarioInD, interval: int = 2):
     """Play all frames by repeatedly clearing and drawing the scene."""
 
     min_frame = min(v.initial_frame for v in scenario.vehicles.values())
@@ -97,7 +106,7 @@ def play_scene(scenario: ScenarioInD, interval: int = 200):
 
     for frame_id in range(min_frame, max_frame + 1):
         draw_scene(scenario, frame_id, fig, ax)
-        plt.pause(interval / 1000.0)
+        plt.pause(interval / 2000.0)
 
     plt.ioff()
     plt.show()
@@ -110,4 +119,5 @@ if __name__ == "__main__":
 
     data_reader = DataReaderInD(prefix_number, data_path)
     scenario = ScenarioInD(data_reader)
-    play_scene(scenario)
+    draw_scene(scenario, 150)
+    plt.show()

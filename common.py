@@ -64,6 +64,8 @@ class State(object):
         self.height = height
         self.heading = heading
         self.vehicle_type = vehicle_type
+        self.position = np.array([x[0], y[0]], dtype=float)
+        self.heading_vis = (-self.heading) % 360
 
 
 

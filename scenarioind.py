@@ -12,6 +12,8 @@ class ScenarioInD(object):
         for track in self.data_reader.tracks:
             track_id = track[TRACK_ID][0]
             trackMeta = self.data_reader.tracksMeta[track_id]
+            if trackMeta[CLASS] == 'pedestrian' or trackMeta[CLASS] == 'bicycle':
+                continue
             vehicles_dict[track_id] = Vehicle(track, trackMeta)
 
         return vehicles_dict
