@@ -5,18 +5,20 @@ from read_data_inD import DataReaderInD
 class ScenarioInD(object):
     def __init__(self, data_reader: DataReaderInD):
         self.data_reader = data_reader
-        self.vehicles = self.set_vehicles()
+        self.vehicles, self.id_list = self.set_vehicles()
 
     def set_vehicles(self):
         vehicles_dict = {}
+        id_list = set()
         for track in self.data_reader.tracks:
             track_id = track[TRACK_ID][0]
             trackMeta = self.data_reader.tracksMeta[track_id]
             if trackMeta[CLASS] == 'pedestrian' or trackMeta[CLASS] == 'bicycle':
                 continue
             vehicles_dict[track_id] = Vehicle(track, trackMeta)
+            id_list.add(track_id)
 
-        return vehicles_dict
+        return vehicles_dict, id_list
 
     def find_vehicle_by_id(self, vehicle_id):
         vehicle = self.vehicles[vehicle_id]
@@ -27,7 +29,7 @@ class ScenarioInD(object):
         ego_vehicle = self.find_vehicle_by_id(ego_id)
         for sublist in ego_vehicle.track[BBOX]:
             x, y, w, h = sublist
-            center = (x + 0.5 * w, y + 0.5 * h)
+            center = (x, y)
             reference_path.append(center)
 
         return reference_path

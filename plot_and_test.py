@@ -92,7 +92,6 @@ def draw_scene(scenario: ScenarioInD, frame_id: int, fig=None, ax=None):
 
     ax.set_title(f"Frame {frame_id}")
     plt.tight_layout()
-    fig.canvas.draw()
 
 
 def play_scene(scenario: ScenarioInD, interval: int = 2):
@@ -119,5 +118,13 @@ if __name__ == "__main__":
 
     data_reader = DataReaderInD(prefix_number, data_path)
     scenario = ScenarioInD(data_reader)
-    draw_scene(scenario, 150)
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    draw_scene(scenario, 150, fig, ax)
+
+    ego_id = 1
+    reference_path = np.array(scenario.set_reference_path(ego_id))
+    px_to_meter = data_reader.recordingMeta[ORTHO_PX_TO_METER]
+    ax.plot(reference_path[:, 0] / px_to_meter / SCALE_DOWN_FACTOR, reference_path[:, 1] / px_to_meter / SCALE_DOWN_FACTOR, '--', color='orange', linewidth=2, alpha=1, label='Reference Path')
     plt.show()

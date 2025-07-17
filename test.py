@@ -10,6 +10,7 @@ from common import State
 from plot_and_test import draw_scene
 from read_data_inD import DataReaderInD
 from scenarioind import ScenarioInD, Vehicle
+from frenet_system_creator import FrenetSystem
 
 
 prefix_number, data_path = '00', '/Users/delvin/Desktop/programs/跨文化返修/inD'
@@ -19,7 +20,6 @@ scenario = ScenarioInD(data_reader)
 
 ego_id = 6
 frame_num = 150
-
 ego_veh: Vehicle = scenario.find_vehicle_by_id(ego_id)
 
 start_frame = ego_veh.initial_frame
@@ -29,25 +29,13 @@ ego_state: State = scenario.find_vehicle_state(frame_num, ego_id)
 svs_state: List[State] = scenario.find_svs_state(frame_num, ego_id)
 
 ev_pos = ego_state.position  # np.array([x, y])
-ev_heading_rad = np.deg2rad(ego_state.heading)  # 注意不是 heading_vis
+ev_frenet_system = FrenetSystem(scenario.set_reference_path(ego_id))
+ds_pos_ev, _ = ev_frenet_system.cartesian2ds_frame(ev_pos)
 
-# 单位朝向向量
-ev_heading_vec = np.array([np.cos(ev_heading_rad), np.sin(ev_heading_rad)])
-
+# ev 在 ref_path 上面, 前方 refpath 方向, 右正左负
 for sv in svs_state:
     sv_pos = sv.position
-    vec_ev_to_sv = sv_pos - ev_pos
+    ds_pos_sv, _ = ev_frenet_system.cartesian2ds_frame(sv_pos)
 
-    # 单位化方向向量
-    vec_ev_to_sv_unit = vec_ev_to_sv / (np.linalg.norm(vec_ev_to_sv) + 1e-6)
 
-    # 计算夹角（弧度）
-    dot = np.clip(np.dot(ev_heading_vec, vec_ev_to_sv_unit), -1.0, 1.0)
-    angle = np.arccos(dot)  # 范围：[0, pi]
-
-    # 判断方向（用叉积判断左右）
-    cross = np.cross(ev_heading_vec, vec_ev_to_sv_unit)
-
-    angle_deg = np.rad2deg(angle)
-
-logger.debug(f"ego_state: {ego_state}")
+logger.debug(f"ego state: {ego_state}")

@@ -1,5 +1,6 @@
 # Tracks
 import numpy as np
+from frenet_system_creator import FrenetSystem
 
 BBOX = "bbox"
 FRAME = "frame"
@@ -118,3 +119,75 @@ def get_rotated_bbox(x_center: np.ndarray, y_center: np.ndarray,
     # Move corners of rotated bounding box from the origin to the object's location
     rotated_bbox_vertices = rotated_bbox_vertices + np.expand_dims(centroids, axis=1)
     return rotated_bbox_vertices
+
+
+def compute_signed_angle(ev: State, sv: State) -> float:
+    """
+    计算单个 SV 相对于 EV 的有符号夹角（单位：度）。
+    逆时针为正（左前方），顺时针为负（右前方）。
+
+    Parameters
+    ----------
+    ev : State
+        主车状态
+    sv : State
+        周围车状态
+
+    Returns
+    -------
+    float
+        有符号角度（单位：度）
+    """
+
+    ev_pos = ev.position
+    sv_pos = sv.position
+
+    vec_ev_to_sv = sv_pos - ev_pos
+    vec_ev_to_sv[1] *= -1  # 适配图像坐标系
+    # 单位化方向向量
+    vec_ev_to_sv_unit = vec_ev_to_sv / (np.linalg.norm(vec_ev_to_sv) + 1e-6)
+
+    # 主车车头方向向量
+    ev_heading_rad = np.deg2rad(ev.heading)
+    ev_heading_vec = np.array([np.cos(ev_heading_rad), np.sin(ev_heading_rad)])
+
+    # 得到夹角（带方向）
+    signed_angle_rad = np.arctan2(np.cross(ev_heading_vec, vec_ev_to_sv_unit),
+                                  np.dot(ev_heading_vec, vec_ev_to_sv_unit))
+    signed_angle_deg = np.rad2deg(signed_angle_rad)
+
+    return signed_angle_deg
+
+def eight_dirs(ds_pos_ev, ds_pos_sv, ego_state):
+
+    s_diff = ds_pos_sv[1] - ds_pos_ev[1]  # sv 相对于 ego 的前后
+    d_diff = ds_pos_sv[0] - ds_pos_ev[0]  # sv 相对于 ego 的左右（右为正）
+
+    width_half = ego_state.height / 2.0
+    length_half = ego_state.width / 2.0
+
+    # 设置近似阈值（可调）
+    s_thresh = length_half
+    d_thresh = width_half
+
+    if abs(d_diff) <= d_thresh:
+        if s_diff > s_thresh:
+            return "preceding"
+        elif s_diff < -s_thresh:
+            return "following"
+    elif abs(s_diff) <= s_thresh:
+        if d_diff > d_thresh:
+            return "rightAlongside"
+        elif d_diff < -d_thresh:
+            return "leftAlongside"
+    else:
+        if s_diff > 0 and d_diff > 0:
+            return "rightPreceding"
+        elif s_diff > 0 and d_diff < 0:
+            return "leftPreceding"
+        elif s_diff < 0 and d_diff > 0:
+            return "rightFollowing"
+        elif s_diff < 0 and d_diff < 0:
+            return "leftFollowing"
+
+    return "Unknown"
