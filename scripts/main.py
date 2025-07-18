@@ -7,9 +7,9 @@ from frenet_system_creator import FrenetSystem
 from loguru import logger
 from tqdm import tqdm
 
-from common import State, eight_dirs
-from read_data_inD import DataReaderInD
-from scenarioind import ScenarioInD, Vehicle
+from src.common import State, eight_dirs
+from src.read_data_inD import DataReaderInD
+from src.scenarioind import ScenarioInD, Vehicle
 
 logger.info("start main")
 

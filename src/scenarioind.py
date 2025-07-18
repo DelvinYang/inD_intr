@@ -1,6 +1,7 @@
-from common import *
-from read_data_inD import DataReaderInD
-
+from __future__ import annotations
+from .common import *
+from .read_data_inD import DataReaderInD
+"""Scenario and vehicle utilities for the inD dataset."""
 
 class ScenarioInD(object):
     def __init__(self, data_reader: DataReaderInD):
@@ -84,3 +85,4 @@ class Vehicle:
         self.initial_frame = trackMeta[INITIAL_FRAME]
         self.final_frame = trackMeta[FINAL_FRAME]
         self.vehicle_id = track[TRACK_ID][0]
+

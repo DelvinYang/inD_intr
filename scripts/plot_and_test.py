@@ -5,9 +5,9 @@ import cv2
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
-from common import *
-from read_data_inD import DataReaderInD
-from scenarioind import ScenarioInD
+from src.common import *
+from src.read_data_inD import DataReaderInD
+from src.scenarioind import ScenarioInD
 
 
 def draw_scene(scenario: ScenarioInD, frame_id: int, fig=None, ax=None):
