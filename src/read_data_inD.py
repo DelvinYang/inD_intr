@@ -1,9 +1,10 @@
+"""Utilities for reading inD dataset CSV files."""
+
 import os
 
 import numpy as np
 from loguru import logger
-
-from common import *
+from .common import *
 import pandas as pd
 
 
@@ -107,3 +108,4 @@ class DataReaderInD(object):
                                      AREA_ID: int(df[AREA_ID][0]),
                                      }
         return extracted_meta_dictionary
+

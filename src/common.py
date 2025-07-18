@@ -1,4 +1,5 @@
-# Tracks
+"""Common utilities and constants for the inD project."""
+
 import numpy as np
 from frenet_system_creator import FrenetSystem
 

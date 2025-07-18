@@ -6,10 +6,10 @@ from loguru import logger
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from common import State
-from plot_and_test import draw_scene
-from read_data_inD import DataReaderInD
-from scenarioind import ScenarioInD, Vehicle
+from src.common import State
+from scripts.plot_and_test import draw_scene
+from src.read_data_inD import DataReaderInD
+from src.scenarioind import ScenarioInD, Vehicle
 from frenet_system_creator import FrenetSystem
 
 
