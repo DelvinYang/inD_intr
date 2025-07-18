@@ -13,7 +13,7 @@ from src.scenarioind import ScenarioInD, Vehicle
 
 logger.info("start main")
 
-prefix_number_list = ['00', '01', '02', '03', '04']
+prefix_number_list = ['05', '06', '07', '08', '09']
 data_path = '/Users/delvin/Desktop/programs/跨文化返修/inD'
 past_frames_needed = 12
 
@@ -106,7 +106,7 @@ for prefix_number in prefix_number_list:
                     continue
 
     logger.info(f"Total samples collected: {len(all_sequence_samples)}")
-    save_path = f"./data/sequence_tensor_dataset_{prefix_number}.pt"
+    save_path = f"../data/sequence_tensor_dataset_{prefix_number}.pt"
     torch.save(all_sequence_samples, save_path)
 
     logger.info(f"Saved dataset with {len(all_sequence_samples)} samples to {save_path}")
