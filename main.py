@@ -106,7 +106,7 @@ for prefix_number in prefix_number_list:
                     continue
 
     logger.info(f"Total samples collected: {len(all_sequence_samples)}")
-    save_path = f"./sequence_tensor_dataset_{prefix_number}.pt"
+    save_path = f"./data/sequence_tensor_dataset_{prefix_number}.pt"
     torch.save(all_sequence_samples, save_path)
 
     logger.info(f"Saved dataset with {len(all_sequence_samples)} samples to {save_path}")
