@@ -13,14 +13,18 @@ from src.scenarioind import ScenarioInD, Vehicle
 
 logger.info("start main")
 
-prefix_number_list = ['05', '06', '07', '08', '09']
+prefix_number_list = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12',
+                      '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24',
+                      '25', '26', '27', '28', '29', '30', '31', '32']
 data_path = '/Users/delvin/Desktop/programs/跨文化返修/inD'
 past_frames_needed = 12
 
 for prefix_number in prefix_number_list:
-    data_reader = DataReaderInD(prefix_number, data_path)
+    try:
+        data_reader = DataReaderInD(prefix_number, data_path)
+    except:
+        continue
     scenario = ScenarioInD(data_reader)
-
 
     all_sequence_samples = []
 
