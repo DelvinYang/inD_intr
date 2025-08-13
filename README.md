@@ -15,7 +15,7 @@ visualizing results.
 Install dependencies and run any script with Python 3. Example:
 
 ```bash
-python scripts/main.py
+python scripts/build_dataset.py
 ```
 
 ## Code Style
