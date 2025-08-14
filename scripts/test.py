@@ -6,12 +6,13 @@ from typing import List, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+from frenet_system_creator import FrenetSystem
 from loguru import logger
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from src.common import State
-from src.load_dataset import build_eval_dataset_small
+from src.common import State, eight_dirs, dir_names
+from src.load_dataset import build_eval_dataset_small, extract_vehicle_frame_pairs
 from src.network import DeepTemporalModel, load_model_with_pv, set_seed
 from src.read_data_inD import DataReaderInD
 from src.scenarioind import ScenarioInD, Vehicle
@@ -215,16 +216,26 @@ if __name__ == "__main__":
     #         logger.info(f"[DryRun] Model forward OK -> out.shape={tuple(out.shape)}")
 
     # ---------- 评估VA95 ----------
-    try:
-        va95_true, va95_pred = compute_va95_compare(
-            model=model,
-            dataset_path=dataset_path,
-            device=device,
-            max_samples=8192,
-            batch_size=4096,
-            feature_index={'vx': 0, 'vy': 2, 'ax': 1, 'ay': 3},  # ← 如与数据不符请改这里
-            use_last_step_speed=True
-        )
-        logger.info(f"[Result] VA95 -> true: {va95_true:.6f} | pred: {va95_pred:.6f}")
-    except Exception as e:
-        logger.error(f"VA95 computation failed: {e}")
+    # try:
+    #     va95_true, va95_pred = compute_va95_compare(
+    #         model=model,
+    #         dataset_path=dataset_path,
+    #         device=device,
+    #         max_samples=8192,
+    #         batch_size=4096,
+    #         feature_index={'vx': 0, 'vy': 2, 'ax': 1, 'ay': 3},  # ← 如与数据不符请改这里
+    #         use_last_step_speed=True
+    #     )
+    #     logger.info(f"[Result] VA95 -> true: {va95_true:.6f} | pred: {va95_pred:.6f}")
+    # except Exception as e:
+    #     logger.error(f"VA95 computation failed: {e}")
+
+    ego_id = random.choice(tuple(scenario.id_list))
+    logger.info(f"[Result] ego_id: {ego_id}")
+
+    pairs = extract_vehicle_frame_pairs(scenario, ego_id=ego_id, min_frames=13)
+    if pairs is None:
+        print("该车跳过")
+    else:
+        print(f"该车帧数: {len(pairs)}")  # 每帧一个 (feature[1,12], label[1,2])
+        # torch.save(pairs, "ego_1234_pairs.pt")

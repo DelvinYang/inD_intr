@@ -7,7 +7,7 @@ from frenet_system_creator import FrenetSystem
 from loguru import logger
 from tqdm import tqdm
 
-from src.common import State, eight_dirs
+from src.common import State, eight_dirs, dir_names
 from src.read_data_inD import DataReaderInD
 from src.scenarioind import ScenarioInD, Vehicle
 
@@ -28,12 +28,6 @@ for prefix_number in prefix_number_list:
 
     all_sequence_samples = []
 
-    # 初始化所有方向为 -1（表示缺失）
-    dir_names = [
-        "preceding", "following",
-        "leftPreceding", "leftAlongside", "leftFollowing",
-        "rightPreceding", "rightAlongside", "rightFollowing"
-    ]
 
     for ego_id in tqdm(scenario.id_list, desc="Processing ego_ids"):
         ego_veh: Vehicle = scenario.find_vehicle_by_id(ego_id)

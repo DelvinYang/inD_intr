@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from loguru import logger
+
 from .common import *
 from .read_data_inD import DataReaderInD
 """Scenario and vehicle utilities for the inD dataset."""
@@ -7,6 +10,9 @@ class ScenarioInD(object):
     def __init__(self, data_reader: DataReaderInD):
         self.data_reader = data_reader
         self.vehicles, self.id_list = self.set_vehicles()
+        logger.info(
+            f"[ScenarioInD] Imported {len(self.id_list)} vehicles "
+        )
 
     def set_vehicles(self):
         vehicles_dict = {}

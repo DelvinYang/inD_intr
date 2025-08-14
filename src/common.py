@@ -192,3 +192,10 @@ def eight_dirs(ds_pos_ev, ds_pos_sv, ego_state):
             return "leftFollowing"
 
     return "Unknown"
+
+# 初始化所有方向为 -1（表示缺失）
+dir_names = [
+    "preceding", "following",
+    "leftPreceding", "leftAlongside", "leftFollowing",
+    "rightPreceding", "rightAlongside", "rightFollowing"
+]

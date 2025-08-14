@@ -1,7 +1,14 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from pathlib import Path
+
+import numpy as np
 import torch
+from frenet_system_creator import FrenetSystem
 from loguru import logger
+
+from src.common import State, dir_names, eight_dirs
+from src.scenarioind import ScenarioInD, Vehicle
+
 
 def _parse_samples(obj) -> List[Tuple[torch.Tensor, torch.Tensor]]:
     """支持三种保存格式，返回 [(x(12,12), y(2)), ...]"""
@@ -95,3 +102,75 @@ def build_eval_dataset_full(path_like: Path) -> Tuple[torch.Tensor, torch.Tensor
     if not xs:
         raise ValueError(f"没有从 {path_like} 解析到任何有效样本。")
     return torch.cat(xs, dim=0).contiguous(), torch.cat(ys, dim=0).contiguous()
+
+
+@torch.no_grad()
+def extract_vehicle_frame_pairs(
+    scenario: ScenarioInD,
+    ego_id: int | str,
+    min_frames: int = 13,
+) -> Optional[List[Tuple[torch.Tensor, torch.Tensor]]]:
+    """
+    对单辆车提取逐帧样本：
+      - feature: [1,12] = (ego_state.lon + ego_state.lat) 4维 + 八方向最近距离 8维
+      - label:   [1,2]  = 当前帧的 [ax, ay] = [ego_state.lon[1], ego_state.lat[1]]
+    要求：
+      - 该车可用帧数 >= min_frames（默认 13）
+      - 中间任一帧获取失败则整车返回 None
+    """
+    try:
+        ego_veh: Vehicle = scenario.find_vehicle_by_id(ego_id)
+        ego_frenet_system = FrenetSystem(scenario.set_reference_path(ego_id))
+    except Exception as e:
+        logger.warning(f"[ego {ego_id}] init failed: {e}")
+        return None
+
+    start_frame = ego_veh.initial_frame
+    end_frame   = ego_veh.final_frame  # [start, end)
+
+    if end_frame - start_frame < min_frames:
+        return None
+
+    samples: List[Tuple[torch.Tensor, torch.Tensor]] = []
+
+    for frame_num in range(start_frame, end_frame):
+        try:
+            ego_state: State = scenario.find_vehicle_state(frame_num, ego_id)
+            svs_state: List[State] = scenario.find_svs_state(frame_num, ego_id)
+
+            # ego 位置 & Frenet
+            ego_pos = np.array([ego_state.x[0], ego_state.y[0]])
+            ds_pos_ev, _ = ego_frenet_system.cartesian2ds_frame(ego_pos)
+
+            # ego 自身4维（与你之前一致：lon + lat）
+            ego_feature = torch.tensor(ego_state.lon + ego_state.lat, dtype=torch.float)  # [4]
+
+            # 八方向最近距离
+            dir_dist = {name: -1.0 for name in dir_names}
+            for sv in svs_state:
+                sv_pos = np.array([sv.x[0], sv.y[0]])
+                ds_pos_sv, _ = ego_frenet_system.cartesian2ds_frame(sv_pos)
+                direction = eight_dirs(ds_pos_ev, ds_pos_sv, ego_state)
+                if direction in dir_dist:
+                    dist = np.linalg.norm(sv_pos - ego_pos)
+                    if dir_dist[direction] == -1.0 or dist < dir_dist[direction]:
+                        dir_dist[direction] = dist
+
+            dist_tensor = torch.tensor([dir_dist[name] for name in dir_names], dtype=torch.float)  # [8]
+            feature = torch.cat([ego_feature, dist_tensor]).unsqueeze(0)  # [1,12]
+
+            # 当前帧标签 ax, ay
+            label = torch.tensor([ego_state.lon[1], ego_state.lat[1]], dtype=torch.float).unsqueeze(0)  # [1,2]
+
+            # 简单数值健检（可选）
+            if not torch.isfinite(feature).all() or not torch.isfinite(label).all():
+                logger.warning(f"[ego {ego_id}] NaN/Inf at frame {frame_num}")
+                return None
+
+            samples.append((feature, label))
+
+        except Exception as e:
+            logger.warning(f"[ego {ego_id}] fail at frame {frame_num}: {e}")
+            return None
+
+    return samples
