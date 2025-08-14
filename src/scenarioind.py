@@ -10,6 +10,7 @@ class ScenarioInD(object):
     def __init__(self, data_reader: DataReaderInD):
         self.data_reader = data_reader
         self.vehicles, self.id_list = self.set_vehicles()
+        self.frame_rate = self.data_reader.recordingMeta[FRAME_RATE]
         logger.info(
             f"[ScenarioInD] Imported {len(self.id_list)} vehicles "
         )
@@ -70,6 +71,7 @@ class ScenarioInD(object):
 
 
             state_f = State(vehicle_id, x_value, y_value, lon_value, lat_value, width, height, heading, vehicle_type)
+            state_f.frame_id = frame_num  # 加上这一行
             return state_f
         else:
             return None
