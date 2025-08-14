@@ -16,7 +16,7 @@ from src.scenarioind import ScenarioInD, Vehicle
 from src.common import State, eight_dirs, dir_names
 
 
-# ================= 工具：环境特征（始终真实几何） =================
+# ================= 工具：环境特征（真实） =================
 @torch.no_grad()
 def _build_env_dist_feature_real_cartesian(
     scenario: ScenarioInD,
@@ -33,9 +33,7 @@ def _build_env_dist_feature_real_cartesian(
         return None
 
     if not hasattr(ego_state, "frame_id"):
-        ego_state.frame_id = ego_state.frame_id if hasattr(ego_state, "frame_id") else None
-        if ego_state.frame_id is None:
-            raise RuntimeError("State must carry frame_id; set it in ScenarioInD.find_vehicle_state")
+        raise RuntimeError("State must carry frame_id; set it in ScenarioInD.find_vehicle_state")
 
     dir_dist = {name: -1.0 for name in dir_names}
     svs_state = scenario.find_svs_state(ego_state.frame_id, ego_id)
@@ -68,36 +66,31 @@ def _build_feature_ego_env_real(
         [ego_state.lon[0], ego_state.lon[1], ego_state.lat[0], ego_state.lat[1]],
         dtype=torch.float32
     )
-    env_feat = _build_env_dist_feature_real_cartesian(scenario, ego_frenet, ego_id, ego_state)
+    env_feat = _build_env_dist_feature_real_cartesian(
+        scenario, FrenetSystem(scenario.set_reference_path(ego_id)), ego_id, ego_state
+    )
     if env_feat is None:
         return None
     return torch.cat([ego_feat, env_feat], dim=0)  # [12]
 
 
-# ==================== 全闭环（自车闭环 + 周期纠偏；环境始终真实） ====================
+# ================ 半闭环（模式二，仅保留） ================
 @torch.no_grad()
-def test_predict_single_vehicle_closedloop_stable(
+def test_predict_single_vehicle_semi_closed_acc_integrate(
     model: torch.nn.Module,
     scenario: ScenarioInD,
     ego_id: int | str,
-    dt: float = 0.04,                 # 采样周期
+    *,
+    dt: float = 0.04,            # 帧间隔（如 25Hz -> 0.04）
     device: Optional[torch.device] = None,
-    # 平滑/限幅/jerk
-    ema_alpha: float = 0.2,           # EMA 系数（第二步起生效）
-    a_max: float = 4.0,               # |a| 限幅
-    j_max: float = 8.0,               # |jerk| 限幅（m/s^3），限制 a 的变化率
-    v_max: float = 25.0,              # |v| 限幅
-    # 周期纠偏
-    warmup_true_env_steps: int = 3,   # 热身期（保留以兼容旧逻辑）
-    reset_every: int = 20,            # 纠偏周期（帧）
-    reset_blend_v: float = 0.5,       # 速度纠偏权重
-    reset_blend_s: float = 0.3,       # 位置纠偏权重（Frenet）
+    v_max: float = 25.0,         # 速度限幅（m/s）
+    reset_every: int = 20,       # 每多少步纠偏一次
+    reset_blend: float = 0.5,    # 纠偏权重：v = (1-b)*v + b*v_true
 ) -> Optional[Dict[str, torch.Tensor]]:
     """
-    核心做法：
-      - 只让“自车动力学”闭环滚动（a→v→s,d），**环境特征始终用真实几何**；
-      - a_pred 做 EMA + jerk 限制 + 幅值裁剪，v 半隐式积分并限幅；
-      - 每 reset_every 帧对 v 与 (s,d) 做平滑拉回真值，避免漂移发散。
+    半闭环（模式二）：输入里的 ax, ay 用真值；vx, vy 用积分（v_t = v_{t-1} + a_true * dt），并周期性纠偏回真值速度。
+    评价目标：预测“当前帧”的 [ax, ay] 与真值对比（从第13帧开始）。
+    返回 None 表示帧不足或中途异常。
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -134,53 +127,28 @@ def test_predict_single_vehicle_closedloop_stable(
             return None
         hist_seq.append(feat_t)
 
-    # ---------- 初值：速度 / 位置（Frenet） ----------
+    # ---------- 准备积分速度 ----------
     st_11 = scenario.find_vehicle_state(start_f + 11, ego_id)
     if st_11 is None:
         return None
     v_lon = float(st_11.lon[0])
     v_lat = float(st_11.lat[0])
 
-    ego_pos_xy_11 = np.array([st_11.x[0], st_11.y[0]])
-    ds_ev, _ = ego_frenet.cartesian2ds_frame(ego_pos_xy_11)
-    s_pred, d_pred = float(ds_ev[0]), float(ds_ev[1])
+    # 预测记录
+    pred_list: List[List[float]] = []
+    true_list: List[List[float]] = []
+    frames: List[int] = []
 
-    # ---------- EMA / jerk 状态 ----------
-    ema_ready = False
-    ax_fused_prev, ay_fused_prev = 0.0, 0.0
-
-    pred_list, true_list, frames = [], [], []
-
-    # ---------- 逐帧闭环 ----------
-    for k, t in enumerate(range(start_f + 12, end_f), start=1):
-        # [1] 输入
+    # ---------- 逐帧预测 ----------
+    for step, t in enumerate(range(start_f + 12, end_f), start=1):
+        # 1) 输入 [1,12,12]
         X = torch.stack(list(hist_seq), dim=0).unsqueeze(0).to(device, dtype=torch.float32)
 
-        # [2] 预测 a
-        a_raw = model(X).squeeze(0).float()
-        ax_raw, ay_raw = float(a_raw[0]), float(a_raw[1])
+        # 2) 模型预测该帧的 [ax, ay]
+        a_pred = model(X).squeeze(0).float().cpu()  # [2]
+        ax_pred_raw, ay_pred_raw = float(a_pred[0]), float(a_pred[1])
 
-        # EMA（首步不用），再做 jerk 限制，最后幅值裁剪
-        if not ema_ready:
-            ax_fused, ay_fused = ax_raw, ay_raw
-            ema_ready = True
-        else:
-            ax_fused = (1 - ema_alpha) * ax_fused_prev + ema_alpha * ax_raw
-            ay_fused = (1 - ema_alpha) * ay_fused_prev + ema_alpha * ay_raw
-
-        # jerk 限制：Δa ≤ j_max * dt
-        da_x = np.clip(ax_fused - ax_fused_prev, -j_max * dt, j_max * dt)
-        da_y = np.clip(ay_fused - ay_fused_prev, -j_max * dt, j_max * dt)
-        ax_fused = ax_fused_prev + da_x
-        ay_fused = ay_fused_prev + da_y
-
-        # 幅值裁剪
-        ax_pred = float(np.clip(ax_fused, -a_max, a_max))
-        ay_pred = float(np.clip(ay_fused, -a_max, a_max))
-
-        ax_fused_prev, ay_fused_prev = ax_pred, ay_pred
-
-        # [3] 真值（评估 + 纠偏用）
+        # 3) 真值
         st_t = scenario.find_vehicle_state(t, ego_id)
         if st_t is None:
             logger.warning(f"[ego {ego_id}] missing gt at frame {t}")
@@ -188,48 +156,42 @@ def test_predict_single_vehicle_closedloop_stable(
         if not hasattr(st_t, "frame_id"):
             st_t.frame_id = t
         ax_true, ay_true = float(st_t.lon[1]), float(st_t.lat[1])
-        v_true_lon, v_true_lat = float(st_t.lon[0]), float(st_t.lat[0])
 
-        pred_list.append([ax_pred, ay_pred])
+        pred_list.append([ax_pred_raw, ay_pred_raw])
         true_list.append([ax_true, ay_true])
         frames.append(t)
 
-        # [4] 半隐式积分 v -> s,d，并限幅
-        v_lon = float(np.clip(v_lon + ax_pred * dt, -v_max, v_max))
-        v_lat = float(np.clip(v_lat + ay_pred * dt, -v_max, v_max))
-        s_pred = s_pred + v_lon * dt
-        d_pred = d_pred + v_lat * dt
-
-        # [5] 周期纠偏（不要过早触发，放在若干步之后更稳）
-        if reset_every > 0 and (k % reset_every) == 0:
-            v_lon = (1.0 - reset_blend_v) * v_lon + reset_blend_v * v_true_lon
-            v_lat = (1.0 - reset_blend_v) * v_lat + reset_blend_v * v_true_lat
-            try:
-                ds_true, _ = ego_frenet.cartesian2ds_frame(np.array([st_t.x[0], st_t.y[0]]))
-                s_true, d_true = float(ds_true[0]), float(ds_true[1])
-                s_pred = (1.0 - reset_blend_s) * s_pred + reset_blend_s * s_true
-                d_pred = (1.0 - reset_blend_s) * d_pred + reset_blend_s * d_true
-            except Exception:
-                pass
-
-        # [6] 环境特征：**始终真实几何**
+        # 4) 生成下一步特征：速度积分 + 周期纠偏（环境始终真实）
         env_feat = _build_env_dist_feature_real_cartesian(scenario, ego_frenet, ego_id, st_t)
-        if env_feat is None or not torch.isfinite(env_feat).all():
+        if env_feat is None:
             return None
 
-        # [7] 写回下一帧特征（ego 用闭环的 v 与 a，env 用真实）
-        ego_feat_next = torch.tensor([v_lon, ax_pred, v_lat, ay_pred], dtype=torch.float32)
+        # 用真 a 积分速度
+        v_lon = np.clip(v_lon + ax_true * dt, -v_max, v_max)
+        v_lat = np.clip(v_lat + ay_true * dt, -v_max, v_max)
+
+        # 周期性纠偏回真速度（平滑过渡）
+        if reset_every > 0 and (step % reset_every) == 0:
+            v_lon = (1 - reset_blend) * v_lon + reset_blend * float(st_t.lon[0])
+            v_lat = (1 - reset_blend) * v_lat + reset_blend * float(st_t.lat[0])
+
+        ego_feat_next = torch.tensor(
+            [v_lon, ax_true,   # 积分 vx + 真 ax
+             v_lat, ay_true],  # 积分 vy + 真 ay
+            dtype=torch.float32
+        )
+
         feat_next = torch.cat([ego_feat_next, env_feat], dim=0)  # [12]
         hist_seq.append(feat_next)
 
     # ---------- 指标 ----------
-    a_pred_t = torch.tensor(pred_list, dtype=torch.float32)
-    a_true_t = torch.tensor(true_list, dtype=torch.float32)
+    a_pred_t = torch.tensor(pred_list, dtype=torch.float32)  # [N,2]
+    a_true_t = torch.tensor(true_list, dtype=torch.float32)  # [N,2]
     mae = torch.mean(torch.abs(a_pred_t - a_true_t), dim=0)
     mse = torch.mean((a_pred_t - a_true_t) ** 2, dim=0)
     rmse = torch.sqrt(mse)
 
-    logger.info(f"[ego {ego_id} | closed-loop STABLE] steps={len(frames)} "
+    logger.info(f"[ego {ego_id} | semi-closed (acc-true, v-integrated)] steps={len(frames)} "
                 f"MAE(ax,ay)=({mae[0]:.6f},{mae[1]:.6f}) "
                 f"RMSE(ax,ay)=({rmse[0]:.6f},{rmse[1]:.6f})")
 
@@ -241,7 +203,7 @@ def test_predict_single_vehicle_closedloop_stable(
     }
 
 
-# ===================== 主入口（演示） =====================
+# ================= 主入口 =================
 if __name__ == "__main__":
     # ---------- 数据与权重路径 ----------
     prefix_number, data_path = '00', '/Users/delvin/Desktop/programs/跨文化返修/inD'
@@ -258,7 +220,7 @@ if __name__ == "__main__":
     data_reader = DataReaderInD(prefix_number, data_path)
     scenario = ScenarioInD(data_reader)
 
-    # ---------- 随机选择模型并加载 ----------
+    # ---------- 随机选择权重并加载模型 ----------
     chosen_model_path = choose_random_model(weights_path, percents, pv_options, seed=seed)
     print(chosen_model_path)
     model = load_model_with_pv(chosen_model_path)
@@ -267,14 +229,13 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Device: {device}")
 
-    # ---------- 选车并评估（全闭环稳定版） ----------
+    # ---------- 选车并评估（半闭环模式二） ----------
     ego_id = random.choice(tuple(scenario.id_list))
-    res = test_predict_single_vehicle_closedloop_stable(
+    res = test_predict_single_vehicle_semi_closed_acc_integrate(
         model, scenario, ego_id,
-        dt=1.0 / scenario.frame_rate, device=device,
-        ema_alpha=0.3, a_max=4.0, j_max=5.0, v_max=25.0,
-        warmup_true_env_steps=3,
-        reset_every=20, reset_blend_v=0.5, reset_blend_s=0.3
+        dt=1.0 / scenario.frame_rate,
+        device=device,
+        v_max=25.0, reset_every=20, reset_blend=0.5
     )
 
     if res is None:
@@ -292,7 +253,7 @@ if __name__ == "__main__":
         plt.figure(figsize=(10, 5))
         plt.plot(frames, ax_true, label="True ax", linewidth=1.5)
         plt.plot(frames, ax_pred, label="Predicted ax", linestyle="--", linewidth=1.5)
-        plt.title(f"Ego {ego_id} - ax True vs Predicted (Closed-loop STABLE)")
+        plt.title(f"Ego {ego_id} - ax True vs Predicted (Semi-closed: acc-true, v-integrated)")
         plt.xlabel("Frame")
         plt.ylabel("ax (m/s²)")
         plt.legend()
